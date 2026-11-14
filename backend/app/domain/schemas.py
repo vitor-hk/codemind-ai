@@ -1,7 +1,13 @@
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, Field, HttpUrl
-from app.domain.enums import AnalysisStatus, SourceType
+from app.domain.enums import (
+    AnalysisStatus,
+    ConfidenceLevel,
+    RelationType,
+    SourceType,
+    SymbolType,
+)
 
 
 class GitImportRequest(BaseModel):
@@ -10,7 +16,7 @@ class GitImportRequest(BaseModel):
     branch: str | None = Field(default=None, max_length=100)
     access_token: str | None = Field(
         default=None,
-        description="Token opcional para clonar repositórios privados (nunca é salvo no banco)",
+        description="Token opcional para clonar repositórios privados",
     )
 
 
@@ -62,3 +68,44 @@ class FileContentResponse(BaseModel):
     language: str
     line_count: int
     content: str
+
+
+class CodeSymbolResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    qualified_name: str
+    symbol_type: SymbolType
+    language: str
+    file_path: str
+    parent_name: str | None
+    start_line: int
+    end_line: int
+    signature: str
+    documentation: str | None
+    dependencies: list[str]
+
+    model_config = {"from_attributes": True}
+
+
+class SymbolRelationshipResponse(BaseModel):
+    id: uuid.UUID
+    source_symbol_id: uuid.UUID | None
+    source_symbol_name: str
+    source_file_path: str
+    target_symbol_id: uuid.UUID | None
+    target_name: str
+    target_file_path: str | None
+    relation_type: RelationType
+    confidence: ConfidenceLevel
+    line_number: int
+
+    model_config = {"from_attributes": True}
+
+
+class AnalysisSummaryResponse(BaseModel):
+    repository_id: uuid.UUID
+    files_analyzed: int
+    symbols_extracted: int
+    relationships_mapped: int
+    by_symbol_type: dict[str, int]
+    by_confidence: dict[str, int]

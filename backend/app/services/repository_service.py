@@ -1,3 +1,4 @@
+from app.services.analysis_service import CodeAnalysisService
 import asyncio
 import shutil
 import tempfile
@@ -126,6 +127,7 @@ class RepositoryService:
             repo_model.last_commit_hash = commit_hash
 
             await self._scan_and_sync_files(repo_model, target_dir)
+            await CodeAnalysisService(self.db).analyze_repository(repo_model.id)
             repo_model.status = AnalysisStatus.COMPLETED
             repo_model.last_analyzed_at = datetime.now(timezone.utc)
             await self.db.commit()
@@ -184,6 +186,7 @@ class RepositoryService:
                 tmp_path.unlink(missing_ok=True)
 
             await self._scan_and_sync_files(repo_model, target_dir)
+            await CodeAnalysisService(self.db).analyze_repository(repo_model.id)
             repo_model.status = AnalysisStatus.COMPLETED
             repo_model.last_analyzed_at = datetime.now(timezone.utc)
             await self.db.commit()
@@ -280,6 +283,7 @@ class RepositoryService:
         added, modified, removed, unchanged = await self._scan_and_sync_files(
             repo_model, local_dir
         )
+        await CodeAnalysisService(self.db).analyze_repository(repo_model.id)
         repo_model.status = AnalysisStatus.COMPLETED
         repo_model.last_analyzed_at = datetime.now(timezone.utc)
         await self.db.commit()
