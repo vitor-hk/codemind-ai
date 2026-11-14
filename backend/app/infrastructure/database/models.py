@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import DateTime, Enum, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.domain.enums import AnalysisStatus, SourceType
 from app.infrastructure.database.base import Base, TimestampMixin
@@ -32,11 +32,44 @@ class RepositoryModel(Base, TimestampMixin):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Estatísticas rápidas para o Dashboard
     languages_stats: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     total_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_symbols: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_dependencies: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_analyzed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    files: Mapped[list["RepositoryFileModel"]] = relationship(
+        "RepositoryFileModel",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+
+
+class RepositoryFileModel(Base, TimestampMixin):
+    __tablename__ = "repository_files"
+    __table_args__ = (
+        UniqueConstraint("repository_id", "relative_path", name="uq_repo_relative_path"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    repository_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("repositories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    relative_path: Mapped[str] = mapped_column(String(1024), nullable=False, index=True)
+    language: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    extension: Mapped[str] = mapped_column(String(32), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    line_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    is_ast_supported: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    repository: Mapped["RepositoryModel"] = relationship(
+        "RepositoryModel", back_populates="files"
     )
