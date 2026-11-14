@@ -92,7 +92,7 @@ class RepositoryService:
                     shutil.copyfileobj(source, target)
 
         entries = [p for p in target_resolved.iterdir() if p.name != "__MACOSX"]
-        if len(entries) == 1 and entries[0].is_dir():
+        if len(entries) == 1 and entries[0].is_dir() and entries[0].name.lower() not in {"app", "src", "lib", "pkg", "core", "backend", "frontend", "tests"}:
             single_root = entries[0]
             for item in single_root.iterdir():
                 shutil.move(str(item), str(target_resolved / item.name))

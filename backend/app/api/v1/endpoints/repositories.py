@@ -8,6 +8,8 @@ from app.domain.schemas import (
     CodeSymbolResponse,
     FileContentResponse,
     GitImportRequest,
+    GraphAnalysisResponse,
+    NodeNeighborhoodResponse,
     RepositoryFileResponse,
     RepositoryResponse,
     SymbolRelationshipResponse,
@@ -15,9 +17,10 @@ from app.domain.schemas import (
 )
 from app.infrastructure.database.session import get_db_session
 from app.services.analysis_service import CodeAnalysisService
+from app.services.graph_service import GraphService
 from app.services.repository_service import RepositoryService
 
-router = APIRouter(prefix="/repositories", tags=["Repository & AST Analysis"])
+router = APIRouter(prefix="/repositories", tags=["Repository, AST & Dependency Graph"])
 
 
 @router.get("", response_model=list[RepositoryResponse])
@@ -112,6 +115,30 @@ async def list_repository_relationships(
         repo_id=repo_id,
         relation_type=relation_type,
         confidence=confidence,
+    )
+
+
+@router.get("/{repo_id}/graph", response_model=GraphAnalysisResponse)
+async def get_repository_dependency_graph(
+    repo_id: uuid.UUID,
+    scope: str = Query(default="file", pattern="^(file|symbol)$"),
+    max_nodes: int = Query(default=80, ge=10, le=300),
+    db: AsyncSession = Depends(get_db_session),
+) -> GraphAnalysisResponse:
+    return await GraphService(db).get_repository_graph(
+        repo_id=repo_id, scope=scope, max_nodes=max_nodes
+    )
+
+
+@router.get("/{repo_id}/graph/neighborhood", response_model=NodeNeighborhoodResponse)
+async def get_graph_node_neighborhood(
+    repo_id: uuid.UUID,
+    node_id: str = Query(..., description="Caminho do arquivo ou identificador do símbolo"),
+    scope: str = Query(default="file", pattern="^(file|symbol)$"),
+    db: AsyncSession = Depends(get_db_session),
+) -> NodeNeighborhoodResponse:
+    return await GraphService(db).get_node_neighborhood(
+        repo_id=repo_id, node_id=node_id, scope=scope
     )
 
 

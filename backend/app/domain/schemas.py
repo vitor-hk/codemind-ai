@@ -109,3 +109,54 @@ class AnalysisSummaryResponse(BaseModel):
     relationships_mapped: int
     by_symbol_type: dict[str, int]
     by_confidence: dict[str, int]
+
+
+class GraphNodeDTO(BaseModel):
+    id: str
+    label: str
+    node_type: str
+    file_path: str
+    in_degree: int
+    out_degree: int
+    centrality: float
+
+
+class GraphEdgeDTO(BaseModel):
+    source: str
+    target: str
+    relation_type: str
+    confidence: str
+    weight: int = 1
+
+
+class CoupledComponentDTO(BaseModel):
+    node_id: str
+    label: str
+    file_path: str
+    fan_in: int
+    fan_out: int
+    instability: float
+    centrality: float
+
+
+class GraphAnalysisResponse(BaseModel):
+    repository_id: uuid.UUID
+    scope: str
+    total_nodes: int
+    total_edges: int
+    cycles_count: int
+    circular_dependencies: list[list[str]]
+    entry_points: list[str]
+    top_coupled_components: list[CoupledComponentDTO]
+    nodes: list[GraphNodeDTO]
+    edges: list[GraphEdgeDTO]
+
+
+class NodeNeighborhoodResponse(BaseModel):
+    repository_id: uuid.UUID
+    node_id: str
+    scope: str
+    direct_dependents: list[str]
+    transitive_dependents: list[str]
+    direct_dependencies: list[str]
+    transitive_dependencies: list[str]

@@ -18,6 +18,8 @@ import {
   Boxes,
   Network,
   Sparkles,
+  Share2,
+  ArrowRightLeft,
 } from "lucide-react";
 
 const API_BASE = "http://localhost:8000/api/v1";
@@ -89,6 +91,35 @@ interface SymbolRelationship {
   line_number: number;
 }
 
+interface CoupledComponent {
+  node_id: string;
+  label: string;
+  file_path: string;
+  fan_in: number;
+  fan_out: number;
+  instability: number;
+  centrality: number;
+}
+
+interface GraphAnalysis {
+  repository_id: string;
+  scope: string;
+  total_nodes: number;
+  total_edges: number;
+  cycles_count: number;
+  circular_dependencies: string[][];
+  entry_points: string[];
+  top_coupled_components: CoupledComponent[];
+}
+
+interface NodeNeighborhood {
+  node_id: string;
+  direct_dependents: string[];
+  transitive_dependents: string[];
+  direct_dependencies: string[];
+  transitive_dependencies: string[];
+}
+
 interface FileContent {
   repository_id: string;
   relative_path: string;
@@ -104,9 +135,11 @@ export function App() {
   const [repoFiles, setRepoFiles] = useState<RepoFile[]>([]);
   const [symbols, setSymbols] = useState<CodeSymbol[]>([]);
   const [relationships, setRelationships] = useState<SymbolRelationship[]>([]);
+  const [graphData, setGraphData] = useState<GraphAnalysis | null>(null);
+  const [neighborhood, setNeighborhood] = useState<NodeNeighborhood | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileContent | null>(null);
   const [highlightRange, setHighlightRange] = useState<[number, number] | null>(null);
-  const [activeTab, setActiveTab] = useState<"files" | "symbols" | "relations">("symbols");
+  const [activeTab, setActiveTab] = useState<"graph" | "symbols" | "relations" | "files">("graph");
 
   const [gitUrl, setGitUrl] = useState("");
   const [customName, setCustomName] = useState("");
@@ -142,20 +175,43 @@ export function App() {
     setSelectedRepo(repo);
     setSelectedFile(null);
     setHighlightRange(null);
+    setNeighborhood(null);
     try {
-      const [filesRes, symRes, relRes] = await Promise.all([
+      const [filesRes, symRes, relRes, graphRes] = await Promise.all([
         axios.get<RepoFile[]>(`${API_BASE}/repositories/${repo.id}/files`),
         axios.get<CodeSymbol[]>(`${API_BASE}/repositories/${repo.id}/symbols`),
         axios.get<SymbolRelationship[]>(`${API_BASE}/repositories/${repo.id}/relationships`),
+        axios.get<GraphAnalysis>(`${API_BASE}/repositories/${repo.id}/graph`, {
+          params: { scope: "file" },
+        }),
       ]);
       setRepoFiles(filesRes.data);
       setSymbols(symRes.data);
       setRelationships(relRes.data);
-      if (filesRes.data.length > 0) {
+      setGraphData(graphRes.data);
+
+      if (graphRes.data.top_coupled_components.length > 0) {
+        const topNode = graphRes.data.top_coupled_components[0];
+        await handleInspectNode(repo.id, topNode.node_id, topNode.file_path);
+      } else if (filesRes.data.length > 0) {
         await handleSelectFile(repo.id, filesRes.data[0].relative_path, null);
       }
     } catch {
       setError("Erro ao carregar dados de análise do repositório.");
+    }
+  };
+
+  const handleInspectNode = async (repoId: string, nodeId: string, filePath: string) => {
+    try {
+      const [neighRes] = await Promise.all([
+        axios.get<NodeNeighborhood>(`${API_BASE}/repositories/${repoId}/graph/neighborhood`, {
+          params: { node_id: nodeId, scope: "file" },
+        }),
+        handleSelectFile(repoId, filePath, null),
+      ]);
+      setNeighborhood(neighRes.data);
+    } catch {
+      setError("Não foi possível carregar vizinhança do nó no grafo.");
     }
   };
 
@@ -220,6 +276,8 @@ export function App() {
         setRepoFiles([]);
         setSymbols([]);
         setRelationships([]);
+        setGraphData(null);
+        setNeighborhood(null);
         setSelectedFile(null);
       }
       await fetchAll();
@@ -257,8 +315,8 @@ export function App() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight text-white">CodeMind AI</h1>
-              <span className="text-xs font-mono px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                Phase 3 · Tree-sitter AST Engine
+              <span className="text-xs font-mono px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                Phase 4 · Dependency Graph Engine (NetworkX)
               </span>
             </div>
             <p className="text-sm text-zinc-400 mt-1">
@@ -334,7 +392,7 @@ export function App() {
             <input
               type="url"
               required
-              placeholder="https://github.com/navdeep-G/samplemod"
+              placeholder="https://github.com/pallets/click"
               value={gitUrl}
               onChange={(e) => setGitUrl(e.target.value)}
               className="w-full px-3.5 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
@@ -346,7 +404,7 @@ export function App() {
             </label>
             <input
               type="text"
-              placeholder="Ex: Sample Python Repo"
+              placeholder="Ex: Click CLI"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
               className="w-full px-3.5 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
@@ -359,7 +417,7 @@ export function App() {
           >
             {importing ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Clonando & Extraindo AST...
+                <Loader2 className="w-4 h-4 animate-spin" /> Clonando & Analisando...
               </>
             ) : (
               <>
@@ -374,171 +432,242 @@ export function App() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
               <FolderGit2 className="w-4 h-4 text-indigo-400" /> Repositórios ({repos.length})
             </h2>
-            {repos.length === 0 ? (
-              <div className="p-6 rounded-xl bg-zinc-900/40 border border-zinc-800/60 text-xs text-zinc-500 text-center">
-                Nenhum repositório importado ainda.
-              </div>
-            ) : (
-              repos.map((r) => (
-                <div
-                  key={r.id}
-                  onClick={() => handleSelectRepo(r)}
-                  className={`p-4 rounded-xl border transition cursor-pointer space-y-3 ${
-                    selectedRepo?.id === r.id
-                      ? "bg-indigo-950/20 border-indigo-500/50"
-                      : "bg-zinc-900/50 border-zinc-800/80 hover:border-zinc-700"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-semibold text-sm text-white">{r.name}</div>
-                      <div className="text-xs text-zinc-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                        <GitBranch className="w-3 h-3" /> {r.default_branch}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleReanalyze(r);
-                        }}
-                        className="text-zinc-400 hover:text-indigo-400 p-1"
-                        title="Reanalisar AST com Tree-sitter"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteRepo(r.id);
-                        }}
-                        className="text-zinc-500 hover:text-rose-400 p-1"
-                        title="Remover repositório"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+            {repos.map((r) => (
+              <div
+                key={r.id}
+                onClick={() => handleSelectRepo(r)}
+                className={`p-4 rounded-xl border transition cursor-pointer space-y-3 ${
+                  selectedRepo?.id === r.id
+                    ? "bg-indigo-950/20 border-indigo-500/50"
+                    : "bg-zinc-900/50 border-zinc-800/80 hover:border-zinc-700"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-sm text-white">{r.name}</div>
+                    <div className="text-xs text-zinc-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                      <GitBranch className="w-3 h-3" /> {r.default_branch}
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-3 gap-1.5 text-center font-mono text-[11px]">
-                    <div className="p-1.5 rounded bg-zinc-900 border border-zinc-800">
-                      <div className="text-zinc-400">Arq</div>
-                      <div className="text-white font-semibold">{r.total_files}</div>
-                    </div>
-                    <div className="p-1.5 rounded bg-zinc-900 border border-zinc-800">
-                      <div className="text-zinc-400">Símbolos</div>
-                      <div className="text-emerald-400 font-semibold">{r.total_symbols}</div>
-                    </div>
-                    <div className="p-1.5 rounded bg-zinc-900 border border-zinc-800">
-                      <div className="text-zinc-400">Relações</div>
-                      <div className="text-amber-400 font-semibold">{r.total_dependencies}</div>
-                    </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReanalyze(r);
+                      }}
+                      className="text-zinc-400 hover:text-indigo-400 p-1"
+                      title="Reanalisar AST"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRepo(r.id);
+                      }}
+                      className="text-zinc-500 hover:text-rose-400 p-1"
+                      title="Remover"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
-              ))
-            )}
+
+                <div className="grid grid-cols-3 gap-1.5 text-center font-mono text-[11px]">
+                  <div className="p-1.5 rounded bg-zinc-900 border border-zinc-800">
+                    <div className="text-zinc-400">Arq</div>
+                    <div className="text-white font-semibold">{r.total_files}</div>
+                  </div>
+                  <div className="p-1.5 rounded bg-zinc-900 border border-zinc-800">
+                    <div className="text-zinc-400">Símbolos</div>
+                    <div className="text-emerald-400 font-semibold">{r.total_symbols}</div>
+                  </div>
+                  <div className="p-1.5 rounded bg-zinc-900 border border-zinc-800">
+                    <div className="text-zinc-400">Relações</div>
+                    <div className="text-amber-400 font-semibold">{r.total_dependencies}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="lg:col-span-4 space-y-3">
-            <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
+            <div className="grid grid-cols-4 gap-1 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
+              <button
+                onClick={() => setActiveTab("graph")}
+                className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1 cursor-pointer ${
+                  activeTab === "graph"
+                    ? "bg-indigo-600 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                <Share2 className="w-3.5 h-3.5" /> Grafo
+              </button>
               <button
                 onClick={() => setActiveTab("symbols")}
-                className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1 cursor-pointer ${
                   activeTab === "symbols"
                     ? "bg-indigo-600 text-white"
                     : "text-zinc-400 hover:text-zinc-200"
                 }`}
               >
-                <Boxes className="w-3.5 h-3.5" /> Símbolos ({symbols.length})
+                <Boxes className="w-3.5 h-3.5" /> ({symbols.length})
               </button>
               <button
                 onClick={() => setActiveTab("relations")}
-                className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1 cursor-pointer ${
                   activeTab === "relations"
                     ? "bg-indigo-600 text-white"
                     : "text-zinc-400 hover:text-zinc-200"
                 }`}
               >
-                <Network className="w-3.5 h-3.5" /> Relações ({relationships.length})
+                <Network className="w-3.5 h-3.5" /> ({relationships.length})
               </button>
               <button
                 onClick={() => setActiveTab("files")}
-                className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1 cursor-pointer ${
                   activeTab === "files"
                     ? "bg-indigo-600 text-white"
                     : "text-zinc-400 hover:text-zinc-200"
                 }`}
               >
-                <FileCode2 className="w-3.5 h-3.5" /> Arquivos ({repoFiles.length})
+                <FileCode2 className="w-3.5 h-3.5" /> ({repoFiles.length})
               </button>
             </div>
 
             <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 max-h-[540px] overflow-y-auto divide-y divide-zinc-800/50">
-              {activeTab === "symbols" &&
-                (symbols.length === 0 ? (
-                  <div className="p-6 text-xs text-zinc-500 text-center">
-                    Nenhum símbolo extraído. Selecione um repositório ou clique no ícone de faísca para analisar.
-                  </div>
-                ) : (
-                  symbols.map((s) => (
-                    <div
-                      key={s.id}
-                      onClick={() =>
-                        selectedRepo &&
-                        handleSelectFile(selectedRepo.id, s.file_path, [s.start_line, s.end_line])
-                      }
-                      className="p-3 text-xs cursor-pointer hover:bg-zinc-800/60 transition space-y-1"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono font-semibold text-indigo-300 truncate">
-                          {s.qualified_name}
-                        </span>
-                        <span className="shrink-0 text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-400">
-                          {s.symbol_type}
-                        </span>
-                      </div>
-                      <div className="font-mono text-[11px] text-zinc-400 truncate">
-                        {s.signature}
-                      </div>
-                      <div className="text-[10px] font-mono text-zinc-500">
-                        {s.file_path}:{s.start_line}-{s.end_line}
+              {activeTab === "graph" && graphData && (
+                <div className="p-3.5 space-y-4 text-xs">
+                  <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                    <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                      <div className="text-zinc-400 text-[10px]">Nós (Arquivos)</div>
+                      <div className="text-sm font-bold text-white">{graphData.total_nodes}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                      <div className="text-zinc-400 text-[10px]">Arestas</div>
+                      <div className="text-sm font-bold text-indigo-400">{graphData.total_edges}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                      <div className="text-zinc-400 text-[10px]">Ciclos</div>
+                      <div
+                        className={`text-sm font-bold ${
+                          graphData.cycles_count > 0 ? "text-rose-400" : "text-emerald-400"
+                        }`}
+                      >
+                        {graphData.cycles_count}
                       </div>
                     </div>
-                  ))
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-2">
+                      Top Componentes Mais Acoplados (Clique p/ Raio-X)
+                    </div>
+                    <div className="space-y-1.5">
+                      {graphData.top_coupled_components.map((comp) => (
+                        <div
+                          key={comp.node_id}
+                          onClick={() =>
+                            selectedRepo &&
+                            handleInspectNode(selectedRepo.id, comp.node_id, comp.file_path)
+                          }
+                          className={`p-2.5 rounded-lg border font-mono cursor-pointer transition ${
+                            neighborhood?.node_id === comp.node_id
+                              ? "bg-indigo-500/15 border-indigo-500/50"
+                              : "bg-zinc-900/70 border-zinc-800 hover:border-zinc-700"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-200 font-semibold truncate">
+                              {comp.file_path}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300">
+                              I={comp.instability}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 text-[10px] text-zinc-400">
+                            <span>Fan-In (Ca): {comp.fan_in}</span>
+                            <span>Fan-Out (Ce): {comp.fan_out}</span>
+                            <span>Centralidade: {comp.centrality}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {neighborhood && (
+                    <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-2 font-mono">
+                      <div className="text-indigo-300 font-semibold flex items-center gap-1.5">
+                        <ArrowRightLeft className="w-3.5 h-3.5" /> Vizinhança: {neighborhood.node_id}
+                      </div>
+                      <div className="text-[11px] text-zinc-300">
+                        <span className="text-emerald-400">Dependentes Diretos ({neighborhood.direct_dependents.length}):</span>{" "}
+                        {neighborhood.direct_dependents.slice(0, 5).join(", ") || "Nenhum"}
+                      </div>
+                      <div className="text-[11px] text-zinc-300">
+                        <span className="text-amber-400">Dependentes Transitivos ({neighborhood.transitive_dependents.length}):</span>{" "}
+                        {neighborhood.transitive_dependents.slice(0, 5).join(", ") || "Nenhum"}
+                      </div>
+                      <div className="text-[11px] text-zinc-300">
+                        <span className="text-sky-400">Dependências Diretas ({neighborhood.direct_dependencies.length}):</span>{" "}
+                        {neighborhood.direct_dependencies.slice(0, 5).join(", ") || "Nenhuma"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === "symbols" &&
+                symbols.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() =>
+                      selectedRepo &&
+                      handleSelectFile(selectedRepo.id, s.file_path, [s.start_line, s.end_line])
+                    }
+                    className="p-3 text-xs cursor-pointer hover:bg-zinc-800/60 transition space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-semibold text-indigo-300 truncate">
+                        {s.qualified_name}
+                      </span>
+                      <span className="shrink-0 text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-400">
+                        {s.symbol_type}
+                      </span>
+                    </div>
+                    <div className="font-mono text-[11px] text-zinc-400 truncate">{s.signature}</div>
+                    <div className="text-[10px] font-mono text-zinc-500">
+                      {s.file_path}:{s.start_line}-{s.end_line}
+                    </div>
+                  </div>
                 ))}
 
               {activeTab === "relations" &&
-                (relationships.length === 0 ? (
-                  <div className="p-6 text-xs text-zinc-500 text-center">
-                    Nenhuma relação estática identificada.
-                  </div>
-                ) : (
-                  relationships.map((rel) => (
-                    <div
-                      key={rel.id}
-                      onClick={() =>
-                        selectedRepo &&
-                        handleSelectFile(selectedRepo.id, rel.source_file_path, [
-                          rel.line_number,
-                          rel.line_number,
-                        ])
-                      }
-                      className="p-3 text-xs cursor-pointer hover:bg-zinc-800/60 transition space-y-1 font-mono"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-amber-300 font-semibold">{rel.relation_type}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                          {rel.confidence}
-                        </span>
-                      </div>
-                      <div className="text-zinc-200 truncate">
-                        {rel.source_symbol_name} → {rel.target_name}
-                      </div>
-                      <div className="text-[10px] text-zinc-500">
-                        {rel.source_file_path}:L{rel.line_number}
-                      </div>
+                relationships.map((rel) => (
+                  <div
+                    key={rel.id}
+                    onClick={() =>
+                      selectedRepo &&
+                      handleSelectFile(selectedRepo.id, rel.source_file_path, [
+                        rel.line_number,
+                        rel.line_number,
+                      ])
+                    }
+                    className="p-3 text-xs cursor-pointer hover:bg-zinc-800/60 transition space-y-1 font-mono"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-amber-300 font-semibold">{rel.relation_type}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
+                        {rel.confidence}
+                      </span>
                     </div>
-                  ))
+                    <div className="text-zinc-200 truncate">
+                      {rel.source_symbol_name} → {rel.target_name}
+                    </div>
+                    <div className="text-[10px] text-zinc-500">
+                      {rel.source_file_path}:L{rel.line_number}
+                    </div>
+                  </div>
                 ))}
 
               {activeTab === "files" &&
@@ -599,7 +728,7 @@ export function App() {
                 </>
               ) : (
                 <div className="p-12 text-xs text-zinc-500 text-center">
-                  Clique em um símbolo AST, relação ou arquivo para abrir o código.
+                  Selecione um componente no grafo ou símbolo para abrir o código.
                 </div>
               )}
             </div>
