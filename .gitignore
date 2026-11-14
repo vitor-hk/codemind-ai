@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+node_modules/
+frontend/dist/
+frontend/.vite/
+.env
+.env.local
+*.pem
+*.key
+.codemind_data/
+repos_workspace/
+.DS_Store
+.idea/
+.vscode/
