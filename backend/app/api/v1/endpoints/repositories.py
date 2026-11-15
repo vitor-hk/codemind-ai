@@ -9,6 +9,8 @@ from app.domain.schemas import (
     FileContentResponse,
     GitImportRequest,
     GraphAnalysisResponse,
+    HybridSearchResponse,
+    IndexingSummaryResponse,
     NodeNeighborhoodResponse,
     RepositoryFileResponse,
     RepositoryResponse,
@@ -19,8 +21,9 @@ from app.infrastructure.database.session import get_db_session
 from app.services.analysis_service import CodeAnalysisService
 from app.services.graph_service import GraphService
 from app.services.repository_service import RepositoryService
+from app.services.semantic_search_service import SemanticSearchService
 
-router = APIRouter(prefix="/repositories", tags=["Repository, AST & Dependency Graph"])
+router = APIRouter(prefix="/repositories", tags=["Repository, AST, Graph & Semantic Search"])
 
 
 @router.get("", response_model=list[RepositoryResponse])
@@ -86,6 +89,26 @@ async def analyze_repository_ast(
     db: AsyncSession = Depends(get_db_session),
 ) -> AnalysisSummaryResponse:
     return await CodeAnalysisService(db).analyze_repository(repo_id)
+
+
+@router.post("/{repo_id}/index", response_model=IndexingSummaryResponse)
+async def index_repository_embeddings(
+    repo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> IndexingSummaryResponse:
+    return await SemanticSearchService(db).index_repository(repo_id)
+
+
+@router.get("/{repo_id}/search", response_model=HybridSearchResponse)
+async def hybrid_search_repository(
+    repo_id: uuid.UUID,
+    q: str = Query(..., min_length=2, description="Consulta técnica em linguagem natural ou nome de símbolo"),
+    limit: int = Query(default=10, ge=1, le=30),
+    db: AsyncSession = Depends(get_db_session),
+) -> HybridSearchResponse:
+    return await SemanticSearchService(db).hybrid_search(
+        repo_id=repo_id, query=q, limit=limit
+    )
 
 
 @router.get("/{repo_id}/symbols", response_model=list[CodeSymbolResponse])

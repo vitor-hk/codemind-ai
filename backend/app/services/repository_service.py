@@ -1,4 +1,3 @@
-from app.services.analysis_service import CodeAnalysisService
 import asyncio
 import shutil
 import tempfile
@@ -19,11 +18,14 @@ from app.domain.enums import AnalysisStatus, SourceType
 from app.domain.schemas import GitImportRequest, SyncResultResponse
 from app.infrastructure.database.models import RepositoryFileModel, RepositoryModel
 from app.repositories.scanner import RepositoryScanner, ScannedFileInfo
+from app.services.analysis_service import CodeAnalysisService
+from app.services.semantic_search_service import SemanticSearchService
 
 logger = get_logger(__name__)
 settings = get_settings()
 
-MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 150 * 1024 * 1024  # 150 MB
+MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 150 * 1024 * 1024
+PROTECTED_ROOT_DIRS = {"app", "src", "lib", "pkg", "core", "backend", "frontend", "tests"}
 
 
 class RepositoryService:
@@ -67,7 +69,6 @@ class RepositoryService:
 
     @staticmethod
     def _safe_extract_zip(zip_path: Path, target_dir: Path) -> None:
-        """Extrai arquivo ZIP prevenindo ataques Zip Slip e Zip Bomb."""
         target_resolved = target_dir.resolve()
         total_uncompressed = 0
 
@@ -92,7 +93,11 @@ class RepositoryService:
                     shutil.copyfileobj(source, target)
 
         entries = [p for p in target_resolved.iterdir() if p.name != "__MACOSX"]
-        if len(entries) == 1 and entries[0].is_dir() and entries[0].name.lower() not in {"app", "src", "lib", "pkg", "core", "backend", "frontend", "tests"}:
+        if (
+            len(entries) == 1
+            and entries[0].is_dir()
+            and entries[0].name.lower() not in PROTECTED_ROOT_DIRS
+        ):
             single_root = entries[0]
             for item in single_root.iterdir():
                 shutil.move(str(item), str(target_resolved / item.name))
@@ -128,17 +133,12 @@ class RepositoryService:
 
             await self._scan_and_sync_files(repo_model, target_dir)
             await CodeAnalysisService(self.db).analyze_repository(repo_model.id)
+            await SemanticSearchService(self.db).index_repository(repo_model.id)
+
             repo_model.status = AnalysisStatus.COMPLETED
             repo_model.last_analyzed_at = datetime.now(timezone.utc)
             await self.db.commit()
             await self.db.refresh(repo_model)
-
-            logger.info(
-                "git_repository_imported",
-                repo_id=str(repo_model.id),
-                name=repo_model.name,
-                files=repo_model.total_files,
-            )
             return repo_model
         except Exception as exc:
             shutil.rmtree(target_dir, ignore_errors=True)
@@ -187,6 +187,8 @@ class RepositoryService:
 
             await self._scan_and_sync_files(repo_model, target_dir)
             await CodeAnalysisService(self.db).analyze_repository(repo_model.id)
+            await SemanticSearchService(self.db).index_repository(repo_model.id)
+
             repo_model.status = AnalysisStatus.COMPLETED
             repo_model.last_analyzed_at = datetime.now(timezone.utc)
             await self.db.commit()
@@ -284,6 +286,8 @@ class RepositoryService:
             repo_model, local_dir
         )
         await CodeAnalysisService(self.db).analyze_repository(repo_model.id)
+        await SemanticSearchService(self.db).index_repository(repo_model.id)
+
         repo_model.status = AnalysisStatus.COMPLETED
         repo_model.last_analyzed_at = datetime.now(timezone.utc)
         await self.db.commit()

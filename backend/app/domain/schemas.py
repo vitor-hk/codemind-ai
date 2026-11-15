@@ -47,6 +47,7 @@ class RepositoryResponse(BaseModel):
     total_files: int
     total_symbols: int
     total_dependencies: int
+    total_chunks: int = 0
     last_analyzed_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -160,3 +161,37 @@ class NodeNeighborhoodResponse(BaseModel):
     transitive_dependents: list[str]
     direct_dependencies: list[str]
     transitive_dependencies: list[str]
+
+
+class IndexingSummaryResponse(BaseModel):
+    repository_id: uuid.UUID
+    total_chunks: int
+    newly_embedded: int
+    reused_cached_chunks: int
+    embedding_model: str
+
+
+class SearchChunkHitDTO(BaseModel):
+    chunk_id: uuid.UUID
+    symbol_id: uuid.UUID | None
+    file_path: str
+    language: str
+    class_name: str | None
+    symbol_name: str
+    element_type: str
+    signature: str
+    start_line: int
+    end_line: int
+    raw_code: str
+    rrf_score: float
+    rerank_score: float
+    vector_rank: int | None
+    lexical_rank: int | None
+    match_reasons: list[str]
+
+
+class HybridSearchResponse(BaseModel):
+    repository_id: uuid.UUID
+    query: str
+    total_hits: int
+    results: list[SearchChunkHitDTO]
