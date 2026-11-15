@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
-import { Code2, Boxes, Sparkles } from "lucide-react";
+import { FileCode, ChevronRight, Crosshair } from "lucide-react";
 import type { CodeSymbol, FileContent } from "../types/codemind";
 
 interface MonacoCodeViewerProps {
@@ -26,6 +26,14 @@ function mapMonacoLanguage(lang: string): string {
     Shell: "shell",
   };
   return map[lang] || "plaintext";
+}
+
+function symbolBadge(type: string) {
+  const t = type.toLowerCase();
+  if (t === "class") return { label: "CLS", cls: "text-amber-400 border-amber-500/30 bg-amber-500/10" };
+  if (t === "interface") return { label: "IFC", cls: "text-sky-400 border-sky-500/30 bg-sky-500/10" };
+  if (t === "method" || t === "constructor") return { label: "MTH", cls: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" };
+  return { label: "FN", cls: "text-purple-300 border-purple-500/30 bg-purple-500/10" };
 }
 
 export function MonacoCodeViewer({
@@ -71,52 +79,81 @@ export function MonacoCodeViewer({
 
   if (!file) {
     return (
-      <div className="h-[540px] rounded-xl bg-zinc-900/60 border border-zinc-800 flex flex-col items-center justify-center text-zinc-500 text-xs gap-2">
-        <Code2 className="w-8 h-8 text-zinc-700" />
-        <span>Selecione um arquivo, símbolo AST ou citação para abrir no Monaco Editor.</span>
+      <div className="h-full min-h-[520px] bg-[#0b0d12] border border-[#1c1f26] flex flex-col items-center justify-center text-zinc-500 text-xs font-mono gap-2">
+        <FileCode className="w-6 h-6 text-zinc-700" />
+        <span>NO_ACTIVE_BUFFER // Selecione um arquivo ou símbolo na árvore</span>
       </div>
     );
   }
 
+  const pathParts = file.relative_path.split("/");
+
   return (
-    <div className="rounded-xl bg-zinc-900/90 border border-zinc-800 overflow-hidden flex flex-col">
-      <div className="px-4 py-2.5 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between gap-2 text-xs font-mono">
-        <span className="text-zinc-100 font-semibold truncate">{file.relative_path}</span>
-        <span className="text-zinc-400">
-          {highlightRange
-            ? `Evidência L${highlightRange[0]}–L${highlightRange[1]}`
-            : `${file.language} · ${file.line_count} linhas`}
-        </span>
+    <div className="h-full bg-[#0b0d12] border border-[#1c1f26] flex flex-col overflow-hidden">
+      {/* Barra de Aba de Editor e Breadcrumb Técnico */}
+      <div className="h-9 px-3 bg-[#08090c] border-b border-[#1c1f26] flex items-center justify-between text-xs font-mono">
+        <div className="flex items-center gap-1.5 overflow-x-auto text-[11px]">
+          <FileCode className="w-3.5 h-3.5 text-emerald-400 shrink-0 mr-1" />
+          {pathParts.map((part, idx) => (
+            <span key={idx} className="flex items-center gap-1 shrink-0">
+              {idx > 0 && <ChevronRight className="w-3 h-3 text-zinc-600" />}
+              <span className={idx === pathParts.length - 1 ? "text-zinc-100 font-semibold" : "text-zinc-500"}>
+                {part}
+              </span>
+            </span>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0 text-[11px]">
+          {highlightRange && (
+            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              SPAN L{highlightRange[0]}:{highlightRange[1]}
+            </span>
+          )}
+          <span className="text-zinc-500 uppercase">{file.language}</span>
+          <span className="text-zinc-600">|</span>
+          <span className="text-zinc-400">{file.line_count} LOC</span>
+        </div>
       </div>
 
+      {/* Outline de Símbolos AST do Arquivo */}
       {fileSymbols.length > 0 && (
-        <div className="px-3 py-2 bg-zinc-950/70 border-b border-zinc-800/80 flex items-center gap-1.5 overflow-x-auto">
-          <span className="text-[10px] font-mono uppercase text-zinc-500 flex items-center gap-1 shrink-0">
-            <Boxes className="w-3 h-3 text-emerald-400" /> Símbolos:
+        <div className="px-3 py-1.5 bg-[#0d1017] border-b border-[#1c1f26] flex items-center gap-1.5 overflow-x-auto">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 mr-1 shrink-0">
+            AST_OUTLINE ({fileSymbols.length}):
           </span>
-          {fileSymbols.map((sym) => (
-            <div key={sym.id} className="inline-flex items-center rounded bg-zinc-900 border border-zinc-800 shrink-0">
-              <button
-                onClick={() => onSelectSymbolRange([sym.start_line, sym.end_line])}
-                className="px-2 py-0.5 text-[11px] font-mono text-zinc-300 hover:text-indigo-300 cursor-pointer"
+          {fileSymbols.map((sym) => {
+            const b = symbolBadge(sym.symbol_type);
+            return (
+              <div
+                key={sym.id}
+                className="inline-flex items-center bg-[#12151e] border border-[#222634] hover:border-zinc-600 transition shrink-0"
               >
-                {sym.name} <span className="text-zinc-500">L{sym.start_line}</span>
-              </button>
-              {onAnalyzeImpact && (
                 <button
-                  onClick={() => onAnalyzeImpact(sym.qualified_name)}
-                  className="px-1.5 py-0.5 border-l border-zinc-800 text-amber-400 hover:bg-amber-500/10 cursor-pointer"
-                  title="Simular impacto"
+                  onClick={() => onSelectSymbolRange([sym.start_line, sym.end_line])}
+                  className="px-2 py-0.5 text-[11px] font-mono flex items-center gap-1.5 text-zinc-300 hover:text-white cursor-pointer"
+                  title={sym.signature}
                 >
-                  <Sparkles className="w-3 h-3" />
+                  <span className={`text-[9px] px-1 border ${b.cls}`}>{b.label}</span>
+                  <span>{sym.name}</span>
+                  <span className="text-zinc-500 text-[10px]">:{sym.start_line}</span>
                 </button>
-              )}
-            </div>
-          ))}
+                {onAnalyzeImpact && (
+                  <button
+                    onClick={() => onAnalyzeImpact(sym.qualified_name)}
+                    className="px-1.5 py-0.5 border-l border-[#222634] text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 cursor-pointer"
+                    title={`Calcular Blast Radius de ${sym.qualified_name}`}
+                  >
+                    <Crosshair className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      <div className="h-[500px] w-full">
+      <div className="flex-1 min-h-[470px] w-full">
         <Editor
           height="100%"
           theme="vs-dark"
@@ -126,11 +163,15 @@ export function MonacoCodeViewer({
           onMount={handleEditorDidMount}
           options={{
             readOnly: true,
-            minimap: { enabled: true },
-            fontSize: 12,
+            minimap: { enabled: true, scale: 0.75 },
+            fontSize: 12.5,
+            fontFamily: "'JetBrains Mono', Menlo, Monaco, monospace",
+            lineHeight: 20,
             scrollBeyondLastLine: false,
             wordWrap: "on",
             lineNumbers: "on",
+            renderLineHighlight: "all",
+            padding: { top: 10, bottom: 10 },
           }}
         />
       </div>

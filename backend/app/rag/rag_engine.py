@@ -56,7 +56,7 @@ class GraphRAGEngine:
 
         search_service = SemanticSearchService(self.db)
         search_res = await search_service.hybrid_search(
-            repo_id=repo.id, query=payload.question, limit=6
+            repo_id=repo.id, query=payload.question, limit=4
         )
 
         citations: list[CodeCitationDTO] = []
@@ -95,7 +95,7 @@ class GraphRAGEngine:
         for idx, hit in enumerate(search_res.results, start=1):
             numbered_lines = "\n".join(
                 f"{hit.start_line + i}: {line}"
-                for i, line in enumerate(hit.raw_code.splitlines()[:35])
+                for i, line in enumerate(hit.raw_code.splitlines()[:20])
             )
             context_blocks.append(
                 f"[EVIDÊNCIA #{idx}] Arquivo: `{hit.file_path}:L{hit.start_line}-L{hit.end_line}` | "
