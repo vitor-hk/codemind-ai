@@ -195,3 +195,77 @@ class HybridSearchResponse(BaseModel):
     query: str
     total_hits: int
     results: list[SearchChunkHitDTO]
+
+
+class CodeCitationDTO(BaseModel):
+    file_path: str
+    symbol_name: str
+    start_line: int
+    end_line: int
+    signature: str
+    snippet: str
+
+
+class ChatQueryRequest(BaseModel):
+    question: str = Field(..., min_length=2, max_length=2000)
+    model_name: str | None = None
+    temperature: float = Field(default=0.1, ge=0.0, le=1.0)
+    max_tokens: int = Field(default=900, ge=100, le=4096)
+
+
+class ChatMessageResponse(BaseModel):
+    id: uuid.UUID
+    repository_id: uuid.UUID
+    role: str
+    intent: str | None
+    content: str
+    citations: list[CodeCitationDTO]
+    execution_metrics: dict
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ImpactEvidenceItemDTO(BaseModel):
+    source_symbol: str
+    source_file_path: str
+    relation_type: str
+    confidence: str
+    line_number: int
+
+
+class ImpactAnalysisResponse(BaseModel):
+    repository_id: uuid.UUID
+    target: str
+    resolved_file_path: str
+    resolved_symbol_name: str | None
+    risk_level: str
+    impact_score: int
+    confirmed_dependents: list[ImpactEvidenceItemDTO]
+    inferred_dependents: list[ImpactEvidenceItemDTO]
+    direct_affected_files: list[str]
+    transitive_affected_files: list[str]
+    related_test_files: list[str]
+    technical_justifications: list[str]
+
+
+class ArchitecturalSmellDTO(BaseModel):
+    smell_type: str
+    severity: str
+    component: str
+    description: str
+    recommendation: str
+
+
+class RepositoryArchitectureReportResponse(BaseModel):
+    repository_id: uuid.UUID
+    repository_name: str
+    overview: str
+    languages_breakdown: dict[str, int]
+    total_files: int
+    total_symbols: int
+    total_relationships: int
+    entry_points: list[str]
+    critical_components: list[CoupledComponentDTO]
+    architectural_smells: list[ArchitecturalSmellDTO]
+    improvement_suggestions: list[str]

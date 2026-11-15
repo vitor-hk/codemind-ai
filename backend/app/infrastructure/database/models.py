@@ -34,6 +34,7 @@ class RepositoryModel(Base, TimestampMixin):
     symbols: Mapped[list["CodeSymbolModel"]] = relationship("CodeSymbolModel", back_populates="repository", cascade="all, delete-orphan")
     relationships: Mapped[list["SymbolRelationshipModel"]] = relationship("SymbolRelationshipModel", back_populates="repository", cascade="all, delete-orphan")
     chunks: Mapped[list["CodeChunkModel"]] = relationship("CodeChunkModel", back_populates="repository", cascade="all, delete-orphan")
+    chat_messages: Mapped[list["ChatMessageModel"]] = relationship("ChatMessageModel", back_populates="repository", cascade="all, delete-orphan")
 
 
 class RepositoryFileModel(Base, TimestampMixin):
@@ -115,3 +116,17 @@ class CodeChunkModel(Base, TimestampMixin):
     embedding: Mapped[list[float]] = mapped_column(Vector(768), nullable=False)
 
     repository: Mapped["RepositoryModel"] = relationship("RepositoryModel", back_populates="chunks")
+
+
+class ChatMessageModel(Base, TimestampMixin):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    repository_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    intent: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    citations: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    execution_metrics: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+    repository: Mapped["RepositoryModel"] = relationship("RepositoryModel", back_populates="chat_messages")

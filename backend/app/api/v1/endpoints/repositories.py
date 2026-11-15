@@ -1,3 +1,11 @@
+from app.domain.schemas import (
+    ChatMessageResponse,
+    ChatQueryRequest,
+    ImpactAnalysisResponse,
+    RepositoryArchitectureReportResponse,
+)
+from app.impact.impact_engine import ImpactAnalysisService
+from app.rag.rag_engine import GraphRAGEngine
 import uuid
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -171,3 +179,37 @@ async def delete_repository(
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     await RepositoryService(db).delete_repository(repo_id)
+
+
+@router.get("/{repo_id}/impact", response_model=ImpactAnalysisResponse)
+async def analyze_component_impact(
+    repo_id: uuid.UUID,
+    target: str = Query(..., min_length=1, description="Nome da função, classe ou caminho do arquivo"),
+    db: AsyncSession = Depends(get_db_session),
+) -> ImpactAnalysisResponse:
+    return await ImpactAnalysisService(db).analyze_change_impact(repo_id=repo_id, target=target)
+
+
+@router.get("/{repo_id}/report", response_model=RepositoryArchitectureReportResponse)
+async def get_repository_architecture_report(
+    repo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> RepositoryArchitectureReportResponse:
+    return await ImpactAnalysisService(db).generate_architecture_report(repo_id=repo_id)
+
+
+@router.post("/{repo_id}/chat", response_model=ChatMessageResponse)
+async def ask_repository_assistant(
+    repo_id: uuid.UUID,
+    payload: ChatQueryRequest,
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatMessageResponse:
+    return await GraphRAGEngine(db).ask_repository(repo_id=repo_id, payload=payload)
+
+
+@router.get("/{repo_id}/chat/history", response_model=list[ChatMessageResponse])
+async def get_repository_chat_history(
+    repo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ChatMessageResponse]:
+    return await GraphRAGEngine(db).list_chat_history(repo_id=repo_id)
